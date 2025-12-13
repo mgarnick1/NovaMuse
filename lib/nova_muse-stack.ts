@@ -1,16 +1,51 @@
-import * as cdk from 'aws-cdk-lib/core';
-import { Construct } from 'constructs';
-// import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as cdk from "aws-cdk-lib";
+import { Construct } from "constructs";
+import { AttributeType, Table, BillingMode } from "aws-cdk-lib/aws-dynamodb";
+import * as apigateway from "aws-cdk-lib/aws-apigateway";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as path from "node:path";
 
 export class NovaMuseStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // The code that defines your stack goes here
+    const table = new Table(this, "QuotesTable", {
+      tableName: "NovaMuseQuotes",
+      partitionKey: { name: "PK", type: AttributeType.STRING },
+      sortKey: { name: "SK", type: AttributeType.STRING },
+      billingMode: BillingMode.PAY_PER_REQUEST,
+    });
+    table.addGlobalSecondaryIndex({
+      indexName: "GSI1-Genre",
+      partitionKey: { name: "GSI1PK", type: AttributeType.STRING },
+      sortKey: { name: "GSI1SK", type: AttributeType.STRING },
+    });
+    table.addGlobalSecondaryIndex({
+      indexName: "GSI2-Author",
+      partitionKey: { name: "GSI2PK", type: AttributeType.STRING },
+      sortKey: { name: "GSI2SK", type: AttributeType.STRING },
+    });
 
-    // example resource
-    // const queue = new sqs.Queue(this, 'NovaMuseQueue', {
-    //   visibilityTimeout: cdk.Duration.seconds(300)
-    // });
+    const quotesLambda = new lambda.Function(this, "QuotesLambda", {
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: "quotes_handler.lambda_handler",
+      code: lambda.Code.fromAsset(path.join(__dirname, "../lambda")),
+      environment: {
+        QUOTES_TABLE: table.tableName,
+      },
+    });
+
+    const api = new apigateway.RestApi(this, "NovaMuseApi", {
+      restApiName: "NovaMuse Quotes Service",
+      description: "Serves inspirational sci-fi and fantasy quotes",
+    });
+
+    const quoteResource = api.root.addResource("quote");
+    quoteResource.addMethod(
+      "GET",
+      new apigateway.LambdaIntegration(quotesLambda)
+    );
+
+    table.grantReadData(quotesLambda);
   }
 }
