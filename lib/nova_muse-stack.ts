@@ -35,9 +35,27 @@ export class NovaMuseStack extends cdk.Stack {
       },
     });
 
+    const createQuotesLambda = new lambda.Function(this, "CreateQuotesLambda", {
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: "createquotes_handler.lambda_handler",
+      code: lambda.Code.fromAsset(path.join(__dirname, "../lambda")),
+      environment: {
+        QUOTES_TABLE: table.tableName,
+      },
+    });
+
     const api = new apigateway.RestApi(this, "NovaMuseApi", {
       restApiName: "NovaMuse Quotes Service",
       description: "Serves inspirational sci-fi and fantasy quotes",
+      defaultCorsPreflightOptions: {
+        allowOrigins: [
+          "http://localhost:3000",
+          "http://localhost:5173",
+          "https://novamusequotes.c3devs.com",
+        ],
+        allowMethods: ["GET", "POST", "OPTIONS"],
+        allowHeaders: ["Content-Type", "Authorization"],
+      },
     });
 
     const quoteResource = api.root.addResource("quote");
@@ -45,7 +63,12 @@ export class NovaMuseStack extends cdk.Stack {
       "GET",
       new apigateway.LambdaIntegration(quotesLambda)
     );
+    quoteResource.addMethod(
+      "POST",
+      new apigateway.LambdaIntegration(createQuotesLambda)
+    );
 
+    table.grantReadWriteData(createQuotesLambda);
     table.grantReadData(quotesLambda);
   }
 }
