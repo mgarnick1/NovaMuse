@@ -4,6 +4,7 @@ import { AttributeType, Table, BillingMode } from "aws-cdk-lib/aws-dynamodb";
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as path from "node:path";
+import * as cognito from "aws-cdk-lib/aws-cognito";
 
 export class NovaMuseStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -53,6 +54,60 @@ export class NovaMuseStack extends cdk.Stack {
       },
     });
 
+    const userPool = new cognito.UserPool(this, "NovaMuseUserPool", {
+      userPoolName: "NovaMuseUsers",
+      signInAliases: {
+        email: true,
+      },
+      selfSignUpEnabled: false, // YOU control who joins
+      passwordPolicy: {
+        minLength: 12,
+        requireLowercase: true,
+        requireUppercase: true,
+        requireDigits: true,
+        requireSymbols: true,
+      },
+      accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+    });
+
+    new cognito.CfnUserPoolGroup(this, "AdminsGroup", {
+      userPoolId: userPool.userPoolId,
+      groupName: "admins",
+      description: "Admin users who can create/edit quotes",
+    });
+
+    const userPoolClient = userPool.addClient("NovaMuseAppClient", {
+      authFlows: {
+        userPassword: true,
+        userSrp: true,
+      },
+      generateSecret: false,
+      oAuth: {
+        flows: {
+          authorizationCodeGrant: true,
+        },
+        scopes: [
+          cognito.OAuthScope.EMAIL,
+          cognito.OAuthScope.OPENID,
+          cognito.OAuthScope.PROFILE,
+        ],
+        callbackUrls: [
+          "http://localhost:5173", // dev
+          "https://novamusequotes.c3devs.com", // prod
+        ],
+        logoutUrls: [
+          "http://localhost:5173",
+          "https://novamusequotes.c3devs.com",
+        ],
+      },
+    });
+
+    userPool.addDomain("NovaMuseCognitoDomain", {
+      cognitoDomain: {
+        domainPrefix: "novamuse",
+      },
+    });
+
     const api = new apigateway.RestApi(this, "NovaMuseApi", {
       restApiName: "NovaMuse Quotes Service",
       description: "Serves inspirational sci-fi and fantasy quotes",
@@ -67,6 +122,16 @@ export class NovaMuseStack extends cdk.Stack {
       },
     });
 
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(
+      this,
+      "NovaMuseAuthorizer",
+      {
+        cognitoUserPools: [userPool],
+      }
+    );
+
+    authorizer._attachToApi(api);
+
     const quoteResource = api.root.addResource("quote");
     quoteResource.addMethod(
       "GET",
@@ -74,15 +139,22 @@ export class NovaMuseStack extends cdk.Stack {
     );
     quoteResource.addMethod(
       "POST",
-      new apigateway.LambdaIntegration(createQuotesLambda)
+      new apigateway.LambdaIntegration(createQuotesLambda),
+      {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      }
     );
-    quoteResource.addResource("browse").addMethod(
-      "GET",
-      new apigateway.LambdaIntegration(browseQuotesLambda)
-    );
+    quoteResource
+      .addResource("browse")
+      .addMethod("GET", new apigateway.LambdaIntegration(browseQuotesLambda));
 
     table.grantReadWriteData(createQuotesLambda);
     table.grantReadData(quotesLambda);
     table.grantReadData(browseQuotesLambda);
+
+    new cdk.CfnOutput(this, "CognitoLoginUrl", {
+      value: `https://novamuse.auth.${this.region}.amazoncognito.com/login?client_id=${userPoolClient.userPoolClientId}&response_type=code&scope=email+openid+profile&redirect_uri=https://novamusequotes.c3devs.com`,
+    });
   }
 }

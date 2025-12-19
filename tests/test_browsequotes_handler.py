@@ -79,7 +79,7 @@ def test_second_page_with_cursor(dynamodb_table):
     event1 = {"queryStringParameters": {"limit": "5", "genre": "sci-fi"}}
     response1 = lambda_handler(event1, None)
     body1 = json.loads(response1["body"])
-    cursor = body1["nextCursor"] 
+    cursor = body1["nextCursor"]
 
     # Get second page
     event2 = {
@@ -104,3 +104,167 @@ def test_no_genre_provided(dynamodb_table):
     body = json.loads(response["body"])
     # Returns first 5 items (all genres)
     assert len(body["items"]) == 5
+
+
+def test_cursor_none_returns_none():
+    assert decode_cursor(None) is None
+    assert encode_cursor(None) is None
+
+
+def test_invalid_cursor_raises_exception(monkeypatch):
+    # Patch table.query to raise an exception
+    def fake_query(**kwargs):
+        raise Exception("Dynamo error")
+
+    monkeypatch.setattr("browsequotes_handler.table.query", fake_query)
+
+    event = {"queryStringParameters": {"genre": "sci-fi"}}
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 500
+    assert "Dynamo error" in body["error"]
+
+
+def test_limit_over_50_clamped(dynamodb_table):
+    event = {"queryStringParameters": {"limit": "100", "genre": "sci-fi"}}
+
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    # Should only return max 50 due to clamp
+    assert len(body["items"]) <= 50
+
+
+def test_full_scan_with_cursor(dynamodb_table):
+    # Get a cursor for first page
+
+    event1 = {"queryStringParameters": {"limit": "5"}}
+    response1 = lambda_handler(event1, None)
+    body1 = json.loads(response1["body"])
+    cursor = body1["nextCursor"]
+
+    # Use cursor for next page in scan mode (no genre)
+    event2 = {"queryStringParameters": {"limit": "5", "cursor": cursor}}
+    response2 = lambda_handler(event2, None)
+    body2 = json.loads(response2["body"])
+    assert len(body2["items"]) > 0
+
+
+def test_encode_cursor_none():
+    assert encode_cursor(None) is None
+
+
+def test_decode_cursor_none():
+    assert decode_cursor(None) is None
+
+
+def test_encode_decode_cursor_roundtrip():
+    key = {"PK": "QUOTE#1", "SK": "METADATA"}
+    encoded = encode_cursor(key)
+    decoded = decode_cursor(encoded)
+    assert decoded == key
+
+
+def test_limit_clamped_to_50(dynamodb_table):
+    event = {"queryStringParameters": {"limit": "100"}}
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    assert len(body["items"]) <= 50
+
+
+def test_invalid_genre_returns_empty(dynamodb_table):
+    event = {"queryStringParameters": {"genre": "nonexistent"}}
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    # Should return empty items array
+    assert body["items"] == []
+
+
+def test_query_exception(monkeypatch):
+    def fake_query(**kwargs):
+        raise Exception("Dynamo error")
+
+    monkeypatch.setattr("browsequotes_handler.table.query", fake_query)
+    event = {"queryStringParameters": {"genre": "sci-fi"}}
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 500
+    assert "Dynamo error" in body["error"]
+
+
+def test_scan_exception(monkeypatch):
+    def fake_scan(**kwargs):
+        raise Exception("Scan failed")
+
+    monkeypatch.setattr("browsequotes_handler.table.scan", fake_scan)
+    event = {"queryStringParameters": {}}
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 500
+    assert "Scan failed" in body["error"]
+
+
+def test_empty_genre_query(dynamodb_table):
+    # Use a genre that exists but with cursor beyond data
+    event = {"queryStringParameters": {"limit": "5", "genre": "sci-fi"}}
+    # simulate start at last key
+    last_key = {"PK": "QUOTE#999", "SK": "METADATA"}
+    event["queryStringParameters"]["cursor"] = encode_cursor(last_key)
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    assert body["items"] == []
+    assert body["nextCursor"] is None
+
+
+def test_full_table_scan_no_cursor(dynamodb_table):
+    event = {"queryStringParameters": {"limit": "5"}}
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    # returns first 5 items from all genres
+    assert len(body["items"]) == 5
+
+
+def test_full_table_scan_with_cursor(dynamodb_table):
+    # get first page
+    event1 = {"queryStringParameters": {"limit": "5"}}
+    response1 = lambda_handler(event1, None)
+    body1 = json.loads(response1["body"])
+    cursor = body1["nextCursor"]
+    # get second page
+    event2 = {"queryStringParameters": {"limit": "5", "cursor": cursor}}
+    response2 = lambda_handler(event2, None)
+    body2 = json.loads(response2["body"])
+    assert len(body2["items"]) > 0
+    assert body2["items"][0]["text"] != body1["items"][0]["text"]
+
+def test_full_table_scan(dynamodb_table):
+    # No author or genre → triggers scan branch
+    event = {"queryStringParameters": {"limit": "5"}}
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    
+    assert len(body["items"]) <= 5
+    assert all("text" in item for item in body["items"])
+
+def test_limit_exceeds_total(dynamodb_table):
+    event = {"queryStringParameters": {"genre": "fantasy", "limit": "50"}}
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    # Only 10 fantasy quotes exist
+    assert len(body["items"]) == 10
+
+def test_full_table_scan_no_genre(dynamodb_table):
+    event = {"queryStringParameters": {"limit": "5"}}
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+    assert len(body["items"]) == 5
+    # Since no genre, items can be from either sci-fi or fantasy
+    genres = set(item["genre"] for item in body["items"])
+    assert genres.issubset({"sci-fi", "fantasy"})
+
+def test_decode_none_cursor_returns_none():
+    assert decode_cursor(None) is None
+
+
+def test_encode_none_cursor_returns_none():
+    assert encode_cursor(None) is None
+

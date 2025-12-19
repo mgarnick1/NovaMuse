@@ -10,6 +10,15 @@ table = dynamodb.Table(os.environ.get("QUOTES_TABLE"))
 
 
 def lambda_handler(event, context, test_genre=None):
+    claims = event["requestContext"]["authorizer"]["claims"]
+    raw_groups = claims.get("cognito:groups", "")
+    groups = raw_groups.split(",") if isinstance(raw_groups, str) else raw_groups
+
+    if "admins" not in groups:
+        return {
+            "statusCode": 403,
+            "body": json.dumps({"error": "Admins only"}),
+        }
     body = json.loads(event.get("body") or "{}")
     text = body.get("text")
     author = body.get("author")
@@ -24,7 +33,8 @@ def lambda_handler(event, context, test_genre=None):
         }
     
     created_at = datetime.utcnow().isoformat() + "Z"
-    quote_id = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
+    normalized_text = " ".join(text.lower().strip().split())
+    quote_id = hashlib.md5(normalized_text.encode("utf-8")).hexdigest()[:8]
     item = {
         "PK": f"QUOTE#{quote_id}",
         "SK": "METADATA",
@@ -43,7 +53,7 @@ def lambda_handler(event, context, test_genre=None):
     try:
         table.put_item(Item=item, ConditionExpression="attribute_not_exists(PK)")
     except ClientError as e:
-        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return {
                 "statusCode": 409,
                 "headers": {"Content-Type": "application/json"},
