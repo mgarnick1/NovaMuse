@@ -44,6 +44,15 @@ export class NovaMuseStack extends cdk.Stack {
       },
     });
 
+    const browseQuotesLambda = new lambda.Function(this, "BrowseQuotesLambda", {
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: "browsequotes_handler.lambda_handler",
+      code: lambda.Code.fromAsset(path.join(__dirname, "../lambda")),
+      environment: {
+        QUOTES_TABLE: table.tableName,
+      },
+    });
+
     const api = new apigateway.RestApi(this, "NovaMuseApi", {
       restApiName: "NovaMuse Quotes Service",
       description: "Serves inspirational sci-fi and fantasy quotes",
@@ -67,8 +76,13 @@ export class NovaMuseStack extends cdk.Stack {
       "POST",
       new apigateway.LambdaIntegration(createQuotesLambda)
     );
+    quoteResource.addResource("browse").addMethod(
+      "GET",
+      new apigateway.LambdaIntegration(browseQuotesLambda)
+    );
 
     table.grantReadWriteData(createQuotesLambda);
     table.grantReadData(quotesLambda);
+    table.grantReadData(browseQuotesLambda);
   }
 }
