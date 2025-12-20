@@ -1,5 +1,9 @@
 {
   "acknowledged-issue-numbers": [
     34892
-  ]
+  ],
+  "hosted-zone:account=386941091305:domainName=c3devs.com:region=us-east-1": {
+    "Id": "/hostedzone/Z07112521U40ORQQXBLEX",
+    "Name": "c3devs.com."
+  }
 }

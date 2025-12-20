@@ -9,3 +9,5 @@ cdk.out
 
 *.cpython-310.pyc
 __pycache__/*
+
+.env

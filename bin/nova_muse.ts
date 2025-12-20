@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib/core';
 import { NovaMuseStack } from '../lib/nova_muse-stack';
+import * as dotenv from 'dotenv';
+dotenv.config();
+
+if (!process.env.AWS_ACCOUNT_ID || !process.env.AWS_REGION) {
+  throw new Error('AWS_ACCOUNT_ID and AWS_REGION must be set');
+}
 
 const app = new cdk.App();
 new NovaMuseStack(app, 'NovaMuseStack', {
@@ -14,7 +20,7 @@ new NovaMuseStack(app, 'NovaMuseStack', {
 
   /* Uncomment the next line if you know exactly what Account and Region you
    * want to deploy the stack to. */
-  // env: { account: '123456789012', region: 'us-east-1' },
+  env: { account: process.env.AWS_ACCOUNT_ID, region: process.env.AWS_REGION },
 
   /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
 });

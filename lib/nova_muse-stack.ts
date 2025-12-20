@@ -5,10 +5,18 @@ import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as path from "node:path";
 import * as cognito from "aws-cdk-lib/aws-cognito";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as targets from "aws-cdk-lib/aws-route53-targets";
 
 export class NovaMuseStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    const certArn = process.env.ACM_ARN;
+    if (!certArn) {
+      throw new Error("ACM_ARN environment variable must be set");
+    }
 
     const table = new Table(this, "QuotesTable", {
       tableName: "NovaMuseQuotes",
@@ -155,6 +163,37 @@ export class NovaMuseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, "CognitoLoginUrl", {
       value: `https://novamuse.auth.${this.region}.amazoncognito.com/login?client_id=${userPoolClient.userPoolClientId}&response_type=code&scope=email+openid+profile&redirect_uri=https://novamusequotes.c3devs.com`,
+    });
+
+    const hostedZone = route53.HostedZone.fromLookup(this, "HostedZone", {
+      domainName: "c3devs.com",
+    });
+
+    const wildcardCert = acm.Certificate.fromCertificateArn(
+      this,
+      "WildcardCert",
+      certArn
+    );
+
+    const apiDomain = new apigateway.DomainName(this, "NovaMuseApiDomain", {
+      domainName: "novamuseapi.c3devs.com",
+      certificate: wildcardCert,
+      endpointType: apigateway.EndpointType.REGIONAL,
+      securityPolicy: apigateway.SecurityPolicy.TLS_1_2,
+    });
+
+    new apigateway.BasePathMapping(this, "NovaMuseApiMapping", {
+      domainName: apiDomain,
+      restApi: api,
+      stage: api.deploymentStage,
+    });
+
+    new route53.ARecord(this, "NovaMuseApiAliasRecord", {
+      zone: hostedZone,
+      recordName: "novamuseapi",
+      target: route53.RecordTarget.fromAlias(
+        new targets.ApiGatewayDomain(apiDomain)
+      ),
     });
   }
 }
