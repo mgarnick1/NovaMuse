@@ -31,7 +31,7 @@ def lambda_handler(event, context, test_genre=None):
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "text, author, and genre are required"}),
         }
-    
+
     created_at = datetime.utcnow().isoformat() + "Z"
     normalized_text = " ".join(text.lower().strip().split())
     quote_id = hashlib.md5(normalized_text.encode("utf-8")).hexdigest()[:8]
@@ -56,7 +56,12 @@ def lambda_handler(event, context, test_genre=None):
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return {
                 "statusCode": 409,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*",  # use "*" only for dev
+                    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+                    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+                },
                 "body": json.dumps({"error": "Quote already exists"}),
             }
         else:
@@ -64,6 +69,11 @@ def lambda_handler(event, context, test_genre=None):
 
     return {
         "statusCode": 201,
-        "headers": {"Content-Type": "application/json"},
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",  # use "*" only for dev
+            "Access-Control-Allow-Headers": "Content-Type,Authorization",
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        },
         "body": json.dumps({"message": "Quote created successfully"}),
     }
