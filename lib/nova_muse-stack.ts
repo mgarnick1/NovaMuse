@@ -100,8 +100,8 @@ export class NovaMuseStack extends cdk.Stack {
           cognito.OAuthScope.PROFILE,
         ],
         callbackUrls: [
-          "http://localhost:5173", // dev
-          "https://novamusequotes.c3devs.com", // prod
+          "http://localhost:5173/callback", // dev
+          "https://novamusequotes.c3devs.com/callback",
         ],
         logoutUrls: [
           "http://localhost:5173",
