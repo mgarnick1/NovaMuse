@@ -8,6 +8,10 @@ import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as targets from "aws-cdk-lib/aws-route53-targets";
+import * as s3 from "aws-cdk-lib/aws-s3";
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as iam from "aws-cdk-lib/aws-iam";
 
 export class NovaMuseStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -102,6 +106,8 @@ export class NovaMuseStack extends cdk.Stack {
         callbackUrls: [
           "http://localhost:5173/callback", // dev
           "https://novamusequotes.c3devs.com/callback",
+          "http://localhost:5173/silent-renew.html",
+          "https://novamusequotes.c3devs.com/silent-renew.html"
         ],
         logoutUrls: [
           "http://localhost:5173",
