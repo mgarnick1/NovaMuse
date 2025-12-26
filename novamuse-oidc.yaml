@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Novamuse UI - OIDC Role, S3 Bucket, and CloudFront Distribution
+
+Parameters:
+  GitHubUsernameOrOrg:
+    Type: String
+    Description: Your GitHub username or organization
+    Default: mgarnick1  # Replace with real value
+
+  GitHubRepo:
+    Type: String
+    Description: Repository name
+    Default: novamuse-ui
+
+  S3BucketName:
+    Type: String
+    Description: Existing S3 bucket name for the frontend
+    Default: novamuse-frontend  # From your frontend stack
+
+  CloudFrontDistributionId:
+    Type: String
+    Description: Existing CloudFront Distribution ID
+    Default: E123ABCDEF1234
+
+Resources:
+  # GitHub OIDC Provider (one per account)
+  GithubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  # IAM Role for GitHub Actions
+  NovamuseDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: NovamuseGitHubActionsRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GithubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubUsernameOrOrg}/${GitHubRepo}:*'
+      Policies:
+        - PolicyName: S3DeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::${S3BucketName}'
+                  - !Sub 'arn:aws:s3:::${S3BucketName}/*'
+
+        - PolicyName: CloudFrontInvalidatePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudfront:CreateInvalidation
+                Resource: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistributionId}'
+
+Outputs:
+  DeployRoleArn:
+    Description: ARN of IAM role for GitHub Actions
+    Value: !GetAtt NovamuseDeployRole.Arn
+
+  CloudFrontDistributionIdOutput:
+    Description: CloudFront Distribution ID (for GitHub secret)
+    Value: !Ref CloudFrontDistributionId
+
+  S3BucketNameOutput:
+    Description: S3 Bucket name (for GitHub secret)
+    Value: !Ref S3BucketName
