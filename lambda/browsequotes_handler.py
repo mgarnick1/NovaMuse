@@ -27,6 +27,7 @@ def lambda_handler(event, context, test_genre=None):
     limit = min(int(query_params.get("limit", "10")), 50)
     cursor = query_params.get("cursor")
     genre = query_params.get("genre")
+    author = query_params.get("author")
 
     exclusive_start_key = decode_cursor(cursor) if cursor else None
     try:
@@ -34,6 +35,17 @@ def lambda_handler(event, context, test_genre=None):
             kwargs = {
                 "IndexName": "GSI1-Genre",
                 "KeyConditionExpression": Key("GSI1PK").eq(f"GENRE#{genre}"),
+                "Limit": limit,
+                "ScanIndexForward": True,
+            }
+            if exclusive_start_key:
+                kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+            response = table.query(**kwargs)
+        elif author:
+            kwargs = {
+                "IndexName": "GSI2-Author",
+                "KeyConditionExpression": Key("GSI2PK").eq(f"AUTHOR#{author}"),
                 "Limit": limit,
                 "ScanIndexForward": True,
             }
