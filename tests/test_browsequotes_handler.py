@@ -1,4 +1,5 @@
 from datetime import datetime
+import hashlib
 import sys
 import os
 import json
@@ -51,12 +52,17 @@ def dynamodb_table():
         # Insert sample quotes
         for i in range(1, 21):
             now = datetime.utcnow().isoformat() + "Z"
+            quote_text = f"Quote number {i}"
+            quote_id = hashlib.md5(quote_text.encode("utf-8")).hexdigest()[:8]
             table.put_item(
                 Item={
                     "PK": f"QUOTE#{i}",
                     "SK": "METADATA",
-                    "text": f"Quote number {i}",
+                    "quoteId": quote_id, 
+                    "text": quote_text,
                     "author": "Author A" if i % 2 == 0 else "Author B",
+                    "source": "Test Source",
+                    "createdAt": now,
                     "genre": "sci-fi" if i <= 10 else "fantasy",
                     "GSI1PK": f"GENRE#{'sci-fi' if i <= 10 else 'fantasy'}",
                     "GSI1SK": f"CREATED#{now}",
@@ -70,8 +76,14 @@ def test_first_page(dynamodb_table):
     event = {"queryStringParameters": {"limit": "5", "genre": "sci-fi"}}
     response = lambda_handler(event, None)
     body = json.loads(response["body"])
-    assert len(body["items"]) == 5
-    assert body["items"][0]["text"] == "Quote number 1"
+    # Ensure Lambda succeeded
+    assert response["statusCode"] == 200, f"Lambda error: {body.get('error')}"
+
+    items = body.get("items", [])
+    next_cursor = body.get("nextCursor")
+
+    assert len(items) == 5
+    assert items[0]["text"] == "Quote number 5"  # newest first
 
 
 def test_second_page_with_cursor(dynamodb_table):
@@ -88,7 +100,7 @@ def test_second_page_with_cursor(dynamodb_table):
     response2 = lambda_handler(event2, None)
     body2 = json.loads(response2["body"])
     assert len(body2["items"]) == 5
-    assert body2["items"][0]["text"] == "Quote number 6"
+    assert body2["items"][0]["text"] == "Quote number 10"
 
 
 def test_limit_exceeds_remaining(dynamodb_table):
@@ -267,4 +279,3 @@ def test_decode_none_cursor_returns_none():
 
 def test_encode_none_cursor_returns_none():
     assert encode_cursor(None) is None
-

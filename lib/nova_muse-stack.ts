@@ -66,6 +66,24 @@ export class NovaMuseStack extends cdk.Stack {
       },
     });
 
+    const listGenresLambda = new lambda.Function(this, "ListGenresLambda", {
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: "listgenres_handler.lambda_handler",
+      code: lambda.Code.fromAsset(path.join(__dirname, "../lambda")),
+      environment: {
+        QUOTES_TABLE: table.tableName,
+      },
+    });
+
+    const listAuthorsLambda = new lambda.Function(this, "ListAuthorsLambda", {
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: "listauthors_handler.lambda_handler",
+      code: lambda.Code.fromAsset(path.join(__dirname, "../lambda")),
+      environment: {
+        QUOTES_TABLE: table.tableName,
+      },
+    });
+
     const userPool = new cognito.UserPool(this, "NovaMuseUserPool", {
       userPoolName: "NovaMuseUsers",
       signInAliases: {
@@ -163,9 +181,19 @@ export class NovaMuseStack extends cdk.Stack {
       .addResource("browse")
       .addMethod("GET", new apigateway.LambdaIntegration(browseQuotesLambda));
 
+    quoteResource
+      .addResource("genres")
+      .addMethod("GET", new apigateway.LambdaIntegration(listGenresLambda));
+
+    quoteResource
+      .addResource("authors")
+      .addMethod("GET", new apigateway.LambdaIntegration(listAuthorsLambda));
+
     table.grantReadWriteData(createQuotesLambda);
     table.grantReadData(quotesLambda);
     table.grantReadData(browseQuotesLambda);
+    table.grantReadData(listGenresLambda);
+    table.grantReadData(listAuthorsLambda);
 
     new cdk.CfnOutput(this, "CognitoLoginUrl", {
       value: `https://novamuse.auth.${this.region}.amazoncognito.com/login?client_id=${userPoolClient.userPoolClientId}&response_type=code&scope=email+openid+profile&redirect_uri=https://novamusequotes.c3devs.com`,

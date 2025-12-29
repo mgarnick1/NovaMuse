@@ -36,7 +36,9 @@ def lambda_handler(event, context, test_genre=None):
                 "IndexName": "GSI1-Genre",
                 "KeyConditionExpression": Key("GSI1PK").eq(f"GENRE#{genre}"),
                 "Limit": limit,
-                "ScanIndexForward": True,
+                "ScanIndexForward": False,
+                "ProjectionExpression": "quoteId, #t, author, genre, #s, createdAt",
+                "ExpressionAttributeNames": {"#t": "text", "#s": "source"},
             }
             if exclusive_start_key:
                 kwargs["ExclusiveStartKey"] = exclusive_start_key
@@ -47,7 +49,9 @@ def lambda_handler(event, context, test_genre=None):
                 "IndexName": "GSI2-Author",
                 "KeyConditionExpression": Key("GSI2PK").eq(f"AUTHOR#{author}"),
                 "Limit": limit,
-                "ScanIndexForward": True,
+                "ScanIndexForward": False,
+                "ProjectionExpression": "quoteId, #t, author, genre, #s, createdAt",
+                "ExpressionAttributeNames": {"#t": "text", "#s": "source"},
             }
             if exclusive_start_key:
                 kwargs["ExclusiveStartKey"] = exclusive_start_key
