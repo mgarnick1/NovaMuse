@@ -44,6 +44,25 @@ def lambda_handler(event, context, test_genre=None):
                 kwargs["ExclusiveStartKey"] = exclusive_start_key
 
             response = table.query(**kwargs)
+
+            # If author is also provided, filter in memory
+            if author:
+                original_count = response.get("Count", len(response.get("Items", [])))
+                filtered_items = [
+                    item for item in response["Items"] if item.get("author") == author
+                ]
+
+                response["Items"] = filtered_items
+                response["Count"] = len(filtered_items)
+
+                # Pagination handling when filtering:
+                # - If we got a full page after filtering → keep LastEvaluatedKey (best effort)
+                # - If filtering reduced the page size → clear LastEvaluatedKey to avoid wrong skips/duplicates
+                if len(filtered_items) < original_count:  # Some items were filtered out
+                    response.pop(
+                        "LastEvaluatedKey", None
+                    )  # Safer: no next page until refetch
+                # Else: no filtering happened → safe to keep LastEvaluatedKey
         elif author:
             kwargs = {
                 "IndexName": "GSI2-Author",
@@ -59,7 +78,11 @@ def lambda_handler(event, context, test_genre=None):
             response = table.query(**kwargs)
         else:
             # Full table browse (allowed, but less efficient)
-            kwargs = {"Limit": limit}
+            kwargs = {
+                "Limit": limit,
+                "ProjectionExpression": "quoteId, #t, author, genre, #s, createdAt",
+                "ExpressionAttributeNames": {"#t": "text", "#s": "source"},
+            }
             if exclusive_start_key:
                 kwargs["ExclusiveStartKey"] = exclusive_start_key
             response = table.scan(**kwargs)

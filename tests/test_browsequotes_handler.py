@@ -35,6 +35,8 @@ def dynamodb_table():
                 {"AttributeName": "SK", "AttributeType": "S"},
                 {"AttributeName": "GSI1PK", "AttributeType": "S"},
                 {"AttributeName": "GSI1SK", "AttributeType": "S"},
+                {"AttributeName": "GSI2PK", "AttributeType": "S"},
+                {"AttributeName": "GSI2SK", "AttributeType": "S"},
             ],
             GlobalSecondaryIndexes=[
                 {
@@ -44,7 +46,15 @@ def dynamodb_table():
                         {"AttributeName": "GSI1SK", "KeyType": "RANGE"},
                     ],
                     "Projection": {"ProjectionType": "ALL"},
-                }
+                },
+                {
+                    "IndexName": "GSI2-Author",
+                    "KeySchema": [
+                        {"AttributeName": "GSI2PK", "KeyType": "HASH"},
+                        {"AttributeName": "GSI2SK", "KeyType": "RANGE"},
+                    ],
+                    "Projection": {"ProjectionType": "ALL"},
+                },
             ],
             BillingMode="PAY_PER_REQUEST",
         )
@@ -54,18 +64,21 @@ def dynamodb_table():
             now = datetime.utcnow().isoformat() + "Z"
             quote_text = f"Quote number {i}"
             quote_id = hashlib.md5(quote_text.encode("utf-8")).hexdigest()[:8]
+            author = "Author A" if i % 2 == 0 else "Author B"
             table.put_item(
                 Item={
                     "PK": f"QUOTE#{i}",
                     "SK": "METADATA",
-                    "quoteId": quote_id, 
+                    "quoteId": quote_id,
                     "text": quote_text,
-                    "author": "Author A" if i % 2 == 0 else "Author B",
+                    "author": author,
                     "source": "Test Source",
                     "createdAt": now,
                     "genre": "sci-fi" if i <= 10 else "fantasy",
                     "GSI1PK": f"GENRE#{'sci-fi' if i <= 10 else 'fantasy'}",
                     "GSI1SK": f"CREATED#{now}",
+                    "GSI2PK": f"AUTHOR#{author}",
+                    "GSI2SK": f"CREATED#{now}",
                 }
             )
 
@@ -248,14 +261,16 @@ def test_full_table_scan_with_cursor(dynamodb_table):
     assert len(body2["items"]) > 0
     assert body2["items"][0]["text"] != body1["items"][0]["text"]
 
+
 def test_full_table_scan(dynamodb_table):
     # No author or genre → triggers scan branch
     event = {"queryStringParameters": {"limit": "5"}}
     response = lambda_handler(event, None)
     body = json.loads(response["body"])
-    
+
     assert len(body["items"]) <= 5
     assert all("text" in item for item in body["items"])
+
 
 def test_limit_exceeds_total(dynamodb_table):
     event = {"queryStringParameters": {"genre": "fantasy", "limit": "50"}}
@@ -263,6 +278,7 @@ def test_limit_exceeds_total(dynamodb_table):
     body = json.loads(response["body"])
     # Only 10 fantasy quotes exist
     assert len(body["items"]) == 10
+
 
 def test_full_table_scan_no_genre(dynamodb_table):
     event = {"queryStringParameters": {"limit": "5"}}
@@ -273,9 +289,44 @@ def test_full_table_scan_no_genre(dynamodb_table):
     genres = set(item["genre"] for item in body["items"])
     assert genres.issubset({"sci-fi", "fantasy"})
 
+
 def test_decode_none_cursor_returns_none():
     assert decode_cursor(None) is None
 
 
 def test_encode_none_cursor_returns_none():
     assert encode_cursor(None) is None
+
+
+def test_genre_and_author_filter_disables_pagination(dynamodb_table):
+    # sci-fi has 10 items total
+    # Author A only appears in 5 of them
+    event = {
+        "queryStringParameters": {
+            "genre": "sci-fi",
+            "author": "Author A",
+            "limit": "10",
+        }
+    }
+
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+
+    assert len(body["items"]) == 5
+    assert body["nextCursor"] is None
+
+
+def test_genre_and_author_filter_returns_only_matching_items(dynamodb_table):
+    event = {
+        "queryStringParameters": {
+            "genre": "sci-fi",
+            "author": "Author B",
+            "limit": "10",
+        }
+    }
+
+    response = lambda_handler(event, None)
+    body = json.loads(response["body"])
+
+    assert all(item["author"] == "Author B" for item in body["items"])
+    assert all(item["genre"] == "sci-fi" for item in body["items"])
